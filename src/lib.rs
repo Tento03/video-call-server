@@ -2,7 +2,7 @@ pub mod handler;
 pub mod messages;
 pub mod rooms;
 
-use axum::{routing::get, Router};
+use axum::{Router, routing::get};
 use tower_http::services::ServeDir;
 
 // Membangun seluruh aplikasi web. Dipakai oleh main.rs dan oleh test.

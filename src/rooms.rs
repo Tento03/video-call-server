@@ -6,7 +6,7 @@ use std::{
 use rand::RngExt;
 use tracing::info;
 
-use crate::messages::{send, Role, Signal, Tx};
+use crate::messages::{Role, Signal, Tx, send};
 
 pub struct Peer {
     pub id: u64,
@@ -72,9 +72,10 @@ mod tests {
         for _ in 0..100 {
             let code = random_code();
             assert_eq!(code.len(), 6);
-            assert!(code
-                .chars()
-                .all(|c| "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".contains(c)));
+            assert!(
+                code.chars()
+                    .all(|c| "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".contains(c))
+            );
         }
     }
 }

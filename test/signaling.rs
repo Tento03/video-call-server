@@ -185,3 +185,46 @@ async fn pesan_terlalu_besar_memutus_koneksi_tapi_server_selamat() {
     let created = recv_json(&mut b).await;
     assert_eq!(created["type"], "created");
 }
+
+#[tokio::test]
+async fn chat_diteruskan_dengan_nama_pengirim_dari_server() {
+    let url = spawn_server().await;
+    let (mut a, mut b, _room) = room_with_two(&url).await;
+
+    // A mencoba memalsukan nama pengirim lewat field tambahan
+    send_json(
+        &mut a,
+        json!({"type": "chat", "text": "  halo Budi  ", "name": "Palsu"}),
+    )
+    .await;
+
+    let diterima = recv_json(&mut b).await;
+    assert_eq!(diterima["type"], "chat-message");
+    assert_eq!(diterima["name"], "Rina"); // nama asli dari server, bukan "Palsu"
+    assert_eq!(diterima["text"], "halo Budi"); // spasi pinggir dibuang
+}
+
+#[tokio::test]
+async fn chat_kosong_atau_kepanjangan_ditolak() {
+    let url = spawn_server().await;
+    let (mut a, _b, _room) = room_with_two(&url).await;
+
+    send_json(&mut a, json!({"type": "chat", "text": "   "})).await;
+    let r1 = recv_json(&mut a).await;
+    assert_eq!(r1["type"], "error");
+
+    send_json(&mut a, json!({"type": "chat", "text": "x".repeat(501)})).await;
+    let r2 = recv_json(&mut a).await;
+    assert_eq!(r2["type"], "error");
+}
+
+#[tokio::test]
+async fn chat_sebelum_masuk_room_ditolak() {
+    let url = spawn_server().await;
+
+    let mut a = connect(&url).await;
+    send_json(&mut a, json!({"type": "chat", "text": "halo"})).await;
+    let reply = recv_json(&mut a).await;
+    assert_eq!(reply["type"], "error");
+    assert_eq!(reply["message"], "kamu belum masuk room");
+}

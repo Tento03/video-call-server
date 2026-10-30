@@ -20,10 +20,12 @@ pub enum Signal {
     Offer { sdp: String },
     Answer { sdp: String },
     Ice { candidate: serde_json::Value },
+    Chat { text: String },
     // dari server
     Created { room: String },
-    Joined { name: String, role: Role },     // untuk yang baru masuk: info lawan bicara
+    Joined { name: String, role: Role }, // untuk yang baru masuk: info lawan bicara
     PeerJoined { name: String, role: Role }, // untuk yang sudah ada: info yang baru masuk
+    ChatMessage { name: String, text: String }, // chat dari peserta lain
     PeerLeft,
     Error { message: String },
 }

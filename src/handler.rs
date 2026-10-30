@@ -1,7 +1,7 @@
 use axum::{
     extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
         State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
     },
     response::IntoResponse,
 };
@@ -9,11 +9,14 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc::unbounded_channel;
 use tracing::{debug, info, warn};
 
-use crate::messages::{send, send_error, Role, Signal};
-use crate::rooms::{leave_room, random_code, Peer, Room, Rooms};
+use crate::messages::{Role, Signal, send, send_error};
+use crate::rooms::{Peer, Room, Rooms, leave_room, random_code};
 
 // Batas ukuran satu pesan. SDP biasanya beberapa KB, jadi 16 KB sudah longgar.
 const MAX_MESSAGE_BYTES: usize = 16 * 1024;
+
+// Batas panjang satu pesan chat (dalam karakter)
+const MAX_CHAT_CHARS: usize = 500;
 
 // Rapikan nama: buang spasi pinggir, tolak kalau kosong atau lebih dari 30 karakter
 fn clean_name(raw: &str) -> Option<String> {
@@ -165,6 +168,38 @@ async fn handle_socket(socket: WebSocket, rooms: Rooms) {
                         if p.id != my_id {
                             // teruskan teks aslinya apa adanya
                             p.tx.send(Message::Text(text.clone())).ok();
+                        }
+                    }
+                }
+            }
+
+            // Chat: validasi, lalu teruskan ke peserta lain beserta nama pengirim
+            Signal::Chat { text: isi } => {
+                let Some(code) = &my_room else {
+                    send_error(&tx, "kamu belum masuk room");
+                    continue;
+                };
+                let isi = isi.trim();
+                if isi.is_empty() || isi.chars().count() > MAX_CHAT_CHARS {
+                    send_error(&tx, "pesan chat harus 1-500 karakter");
+                    continue;
+                }
+                let map = rooms.lock().unwrap();
+                if let Some(r) = map.get(code) {
+                    // Nama pengirim diambil dari data server, bukan dari klien
+                    let sender = r
+                        .peers
+                        .iter()
+                        .find(|p| p.id == my_id)
+                        .map(|p| p.name.clone())
+                        .unwrap_or_default();
+                    let keluar = Signal::ChatMessage {
+                        name: sender,
+                        text: isi.to_string(),
+                    };
+                    for p in &r.peers {
+                        if p.id != my_id {
+                            send(&p.tx, &keluar);
                         }
                     }
                 }

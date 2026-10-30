@@ -58,6 +58,7 @@
     #localVideo { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
     #camOffLabel { position: absolute; inset: 0; display: none; place-items: center; background: #14171d; color: var(--muted); font-size: .85rem; text-align: center; }
     #localWrap.cam-off #camOffLabel { display: grid; }
+    .local-name { position: absolute; left: .4rem; bottom: .4rem; background: rgba(0,0,0,.6); padding: .15rem .55rem; border-radius: 999px; font-size: .75rem; }
 
     .controls { position: absolute; left: 0; right: 0; bottom: calc(1.2rem + env(safe-area-inset-bottom)); display: flex; justify-content: center; gap: 1rem; }
     .ctrl { width: 56px; height: 56px; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center; background: rgba(37,42,51,.9); color: #fff; backdrop-filter: blur(8px); transition: transform .1s, background .15s; }
@@ -65,17 +66,34 @@
     .ctrl.off { background: #fff; color: #111; }
     .ctrl.hangup { background: var(--danger); }
     .ctrl svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .ctrl-wrap { position: relative; }
+    .badge { position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: var(--danger); color: #fff; font-size: .75rem; font-weight: 700; display: grid; place-items: center; pointer-events: none; }
 
-    #toast { position: absolute; left: 50%; top: 4.5rem; transform: translateX(-50%); background: rgba(26,29,36,.95); padding: .6rem 1rem; border-radius: 10px; font-size: .9rem; opacity: 0; pointer-events: none; transition: opacity .25s; }
+    #toast { position: absolute; left: 50%; top: 4.5rem; transform: translateX(-50%); background: rgba(26,29,36,.95); padding: .6rem 1rem; border-radius: 10px; font-size: .9rem; opacity: 0; pointer-events: none; transition: opacity .25s; z-index: 10; }
     #toast.show { opacity: 1; }
+
+    /* ---------- Panel chat ---------- */
+    #chatPanel { position: absolute; right: 1rem; top: 4.5rem; bottom: calc(6.5rem + 150px); width: 320px; display: flex; flex-direction: column; background: rgba(26,29,36,.95); backdrop-filter: blur(8px); border-radius: 14px; overflow: hidden; z-index: 5; box-shadow: 0 6px 24px rgba(0,0,0,.5); }
+    .chat-head { padding: .7rem 1rem; font-weight: 600; border-bottom: 1px solid var(--surface-2); }
+    #chatList { flex: 1; overflow-y: auto; padding: .8rem; display: flex; flex-direction: column; gap: .6rem; }
+    .chat-empty { color: var(--muted); font-size: .85rem; text-align: center; margin: auto; }
+    .chat-msg { max-width: 85%; align-self: flex-start; }
+    .chat-msg.mine { align-self: flex-end; }
+    .chat-msg .who { font-size: .75rem; color: var(--muted); margin-bottom: .15rem; }
+    .chat-msg.mine .who { text-align: right; }
+    .chat-msg .body { background: var(--surface-2); padding: .5rem .7rem; border-radius: 12px; font-size: .9rem; line-height: 1.35; word-break: break-word; white-space: pre-wrap; }
+    .chat-msg.mine .body { background: var(--accent); }
+    .chat-form { display: flex; gap: .5rem; padding: .6rem; border-top: 1px solid var(--surface-2); }
+    .chat-form input { flex: 1; min-width: 0; font-size: .95rem; padding: .6rem .8rem; border-radius: 10px; border: 2px solid var(--surface-2); background: var(--bg); color: var(--text); }
+    .chat-form input:focus { outline: none; border-color: var(--accent); }
+    .chat-form button { border: 0; border-radius: 10px; padding: 0 1rem; background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; }
 
     @media (max-width: 600px) {
       #localWrap { width: 110px; bottom: 6rem; right: .7rem; }
       .name-tag { bottom: 6rem; left: .7rem; }
       .ctrl { width: 52px; height: 52px; }
+      #chatPanel { left: .7rem; right: .7rem; width: auto; bottom: calc(6rem + 95px); }
     }
-
-    .local-name { position: absolute; left: .4rem; bottom: .4rem; background: rgba(0,0,0,.6); padding: .15rem .55rem; border-radius: 999px; font-size: .75rem; }
   </style>
 </head>
 <body>
@@ -118,9 +136,19 @@
     </div>
 
     <div id="localWrap">
-    <video id="localVideo" autoplay muted playsinline></video>
-    <div id="camOffLabel">Kamera mati</div>
-    <div id="localName" class="local-name"></div>
+      <video id="localVideo" autoplay muted playsinline></video>
+      <div id="camOffLabel">Kamera mati</div>
+      <div id="localName" class="local-name"></div>
+    </div>
+
+    <!-- Panel chat -->
+    <div id="chatPanel" hidden>
+      <div class="chat-head">Chat</div>
+      <div id="chatList"></div>
+      <div class="chat-form">
+        <input id="chatInput" placeholder="Tulis pesan..." maxlength="500" autocomplete="off">
+        <button id="btnSend">Kirim</button>
+      </div>
     </div>
 
     <div id="toast"></div>
@@ -128,6 +156,10 @@
     <div class="controls">
       <button id="btnMute" class="ctrl" title="Mikrofon"></button>
       <button id="btnCam" class="ctrl" title="Kamera"></button>
+      <div class="ctrl-wrap">
+        <button id="btnChat" class="ctrl" title="Chat"></button>
+        <span id="chatBadge" class="badge" hidden>0</span>
+      </div>
       <button id="btnLeave" class="ctrl hangup" title="Keluar"></button>
     </div>
   </section>
@@ -139,16 +171,20 @@
       micOff: '<svg viewBox="0 0 24 24"><line x1="2" x2="22" y1="2" y2="22"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><line x1="12" x2="12" y1="19" y2="22"/></svg>',
       cam: '<svg viewBox="0 0 24 24"><path d="m16 13 5.22 3.48a.5.5 0 0 0 .78-.42V7.87a.5.5 0 0 0-.75-.43L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>',
       camOff: '<svg viewBox="0 0 24 24"><path d="M10.66 6H14a2 2 0 0 1 2 2v2.5l5.25-3.5a.5.5 0 0 1 .75.43v8.14"/><path d="M16 16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2"/><line x1="2" x2="22" y1="2" y2="22"/></svg>',
+      chat: '<svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
       hangup: '<svg viewBox="0 0 24 24" style="transform: rotate(135deg)"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
     };
 
     const ROLE_LABEL = { interviewer: "Pewawancara", candidate: "Kandidat" };
+    const MAX_CHAT = 500;
 
     const $ = (id) => document.getElementById(id);
     const rtcConfig = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
 
     let ws, pc, localStream;
     let currentRoom = "";
+    let myName = "";
+    let unread = 0;
 
     // ---------- Fungsi tampilan ----------
     function showLobbyError(text) {
@@ -179,6 +215,7 @@
       $("btnMute").classList.remove("off");
       $("btnCam").innerHTML = ICONS.cam;
       $("btnCam").classList.remove("off");
+      $("btnChat").innerHTML = ICONS.chat;
       $("btnLeave").innerHTML = ICONS.hangup;
       $("localWrap").classList.remove("cam-off");
     }
@@ -197,6 +234,62 @@
     function setRemoteLabel(name, role) {
       $("remoteLabel").textContent = `${name} · ${ROLE_LABEL[role] || ""}`;
       $("remoteLabel").hidden = false;
+    }
+
+    // ---------- Chat ----------
+    function updateBadge() {
+      $("chatBadge").textContent = unread > 99 ? "99+" : unread;
+      $("chatBadge").hidden = unread === 0;
+    }
+
+    function resetChat() {
+      $("chatList").innerHTML = "";
+      $("chatPanel").hidden = true;
+      $("chatInput").value = "";
+      unread = 0;
+      updateBadge();
+    }
+
+    function toggleChat() {
+      const panel = $("chatPanel");
+      panel.hidden = !panel.hidden;
+      if (!panel.hidden) {
+        unread = 0;
+        updateBadge();
+        $("chatList").scrollTop = $("chatList").scrollHeight;
+        $("chatInput").focus();
+      }
+    }
+
+    function addChat(name, text, mine) {
+      // textContent (bukan innerHTML) supaya isi pesan tidak pernah dijalankan sebagai HTML
+      const row = document.createElement("div");
+      row.className = "chat-msg" + (mine ? " mine" : "");
+      const who = document.createElement("div");
+      who.className = "who";
+      who.textContent = mine ? "Kamu" : name;
+      const body = document.createElement("div");
+      body.className = "body";
+      body.textContent = text;
+      row.append(who, body);
+
+      const list = $("chatList");
+      list.appendChild(row);
+      list.scrollTop = list.scrollHeight;
+
+      if (!mine && $("chatPanel").hidden) {
+        unread++;
+        updateBadge();
+      }
+    }
+
+    function sendChat() {
+      const text = $("chatInput").value.trim();
+      if (!text) return;
+      if (text.length > MAX_CHAT) { toast(`Maksimal ${MAX_CHAT} karakter`); return; }
+      sendSignal({ type: "chat", text });
+      addChat(myName, text, true);
+      $("chatInput").value = "";
     }
 
     // ---------- Masuk dan keluar ----------
@@ -218,9 +311,10 @@
       }
 
       $("localVideo").srcObject = localStream;
-      currentRoom = firstMessage.room || "";
+      myName = firstMessage.name;
       const myRole = firstMessage.type === "create" ? "interviewer" : "candidate";
-      $("localName").textContent = `${firstMessage.name} · ${ROLE_LABEL[myRole]}`;    
+      $("localName").textContent = `${myName} · ${ROLE_LABEL[myRole]}`;
+      currentRoom = firstMessage.room || "";
 
       const proto = location.protocol === "https:" ? "wss" : "ws";
       ws = new WebSocket(`${proto}://${location.host}/ws`);
@@ -228,6 +322,7 @@
       ws.onopen = () => {
         ws.send(JSON.stringify(firstMessage));
         resetControls();
+        resetChat();
         setStatus("wait", "Menyambungkan");
         showWaiting("Menunggu peserta lain...");
         $("roomLabel").textContent = currentRoom ? "Room " + currentRoom : "Room";
@@ -257,6 +352,7 @@
       if (localStream) { localStream.getTracks().forEach((t) => t.stop()); localStream = null; }
       $("localVideo").srcObject = null;
       $("remoteLabel").hidden = true;
+      resetChat();
       $("call").hidden = true;
       $("lobby").hidden = false;
       setLobbyBusy(false);
@@ -339,6 +435,10 @@
           if (pc) await pc.addIceCandidate(msg.candidate);
           break;
 
+        case "chat-message":
+          addChat(msg.name, msg.text, false);
+          break;
+
         case "peer-left":
           closePeer();
           $("remoteLabel").hidden = true;
@@ -348,6 +448,11 @@
           break;
 
         case "error": {
+          // Error chat tidak boleh mengakhiri panggilan
+          if (msg.message.startsWith("pesan chat")) {
+            toast("Pesan chat harus 1-500 karakter");
+            break;
+          }
           const pesan =
             msg.message === "room tidak ditemukan" ? "Room tidak ditemukan. Periksa kembali kodenya."
             : msg.message === "room penuh" ? "Room sudah penuh (maksimal 2 peserta)."
@@ -390,6 +495,10 @@
       $("btnCam").classList.toggle("off", !track.enabled);
       $("localWrap").classList.toggle("cam-off", !track.enabled);
     };
+
+    $("btnChat").onclick = toggleChat;
+    $("btnSend").onclick = sendChat;
+    $("chatInput").onkeydown = (e) => { if (e.key === "Enter") sendChat(); };
 
     $("btnLeave").onclick = () => cleanup("");
 
