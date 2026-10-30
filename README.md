@@ -7,7 +7,10 @@ Aplikasi video call 1-on-1 untuk wawancara. Server **Rust** menjadi *signaling s
 
 ![Demo](docs/demo.gif)
 
-> ISI: rekam GIF demo (lihat panduan di bawah) dan simpan di `docs/demo.gif`.
+> <img width="1365" height="626" alt="image" src="https://github.com/user-attachments/assets/5b19cb48-0238-478f-89f9-3b14c6a464a5" />
+<img width="1362" height="625" alt="image" src="https://github.com/user-attachments/assets/801e87fc-5d3a-4e06-8cbf-7ddc297f11e0" />
+
+
 
 ## Fitur
 
