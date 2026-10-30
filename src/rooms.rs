@@ -62,3 +62,19 @@ pub fn leave_room(rooms: &Rooms, room: &Option<String>, my_id: u64) {
         info!(room = %code, "room dihapus karena kosong");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn kode_room_6_karakter_dan_tanpa_karakter_mirip() {
+        for _ in 0..100 {
+            let code = random_code();
+            assert_eq!(code.len(), 6);
+            assert!(code
+                .chars()
+                .all(|c| "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".contains(c)));
+        }
+    }
+}
