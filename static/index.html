@@ -50,6 +50,7 @@
     .topbar { position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: center; gap: .6rem; padding: calc(.9rem + env(safe-area-inset-top)) 1rem .9rem; background: linear-gradient(rgba(0,0,0,.55), transparent); }
     .chip { display: inline-flex; align-items: center; gap: .5rem; background: rgba(26,29,36,.8); backdrop-filter: blur(8px); padding: .45rem .8rem; border-radius: 999px; font-size: .9rem; }
     .chip button { border: 0; background: var(--accent); color: #fff; border-radius: 999px; padding: .25rem .7rem; font-size: .8rem; cursor: pointer; }
+    .chip.timer { font-variant-numeric: tabular-nums; font-weight: 600; }
     .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--warn); }
     .dot.ok { background: var(--ok); }
     .dot.bad { background: var(--danger); }
@@ -64,6 +65,7 @@
     .ctrl { width: 56px; height: 56px; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center; background: rgba(37,42,51,.9); color: #fff; backdrop-filter: blur(8px); transition: transform .1s, background .15s; }
     .ctrl:hover { transform: scale(1.08); }
     .ctrl.off { background: #fff; color: #111; }
+    .ctrl.active { background: var(--accent); }
     .ctrl.hangup { background: var(--danger); }
     .ctrl svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     .ctrl-wrap { position: relative; }
@@ -72,11 +74,13 @@
     #toast { position: absolute; left: 50%; top: 4.5rem; transform: translateX(-50%); background: rgba(26,29,36,.95); padding: .6rem 1rem; border-radius: 10px; font-size: .9rem; opacity: 0; pointer-events: none; transition: opacity .25s; z-index: 10; }
     #toast.show { opacity: 1; }
 
-    /* ---------- Panel chat ---------- */
-    #chatPanel { position: absolute; right: 1rem; top: 4.5rem; bottom: calc(6.5rem + 150px); width: 320px; display: flex; flex-direction: column; background: rgba(26,29,36,.95); backdrop-filter: blur(8px); border-radius: 14px; overflow: hidden; z-index: 5; box-shadow: 0 6px 24px rgba(0,0,0,.5); }
-    .chat-head { padding: .7rem 1rem; font-weight: 600; border-bottom: 1px solid var(--surface-2); }
+    /* ---------- Panel samping (chat dan catatan) ---------- */
+    .side-panel { position: absolute; right: 1rem; top: 4.5rem; bottom: calc(6.5rem + 150px); width: 320px; display: flex; flex-direction: column; background: rgba(26,29,36,.95); backdrop-filter: blur(8px); border-radius: 14px; overflow: hidden; z-index: 5; box-shadow: 0 6px 24px rgba(0,0,0,.5); }
+    .panel-head { padding: .7rem 1rem; font-weight: 600; border-bottom: 1px solid var(--surface-2); }
+    .panel-head small { display: block; font-weight: 400; color: var(--muted); font-size: .75rem; margin-top: .15rem; }
+
+    /* Chat */
     #chatList { flex: 1; overflow-y: auto; padding: .8rem; display: flex; flex-direction: column; gap: .6rem; }
-    .chat-empty { color: var(--muted); font-size: .85rem; text-align: center; margin: auto; }
     .chat-msg { max-width: 85%; align-self: flex-start; }
     .chat-msg.mine { align-self: flex-end; }
     .chat-msg .who { font-size: .75rem; color: var(--muted); margin-bottom: .15rem; }
@@ -88,11 +92,20 @@
     .chat-form input:focus { outline: none; border-color: var(--accent); }
     .chat-form button { border: 0; border-radius: 10px; padding: 0 1rem; background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; }
 
+    /* Catatan */
+    #notesText { flex: 1; resize: none; border: 0; background: transparent; color: var(--text); font: inherit; font-size: .9rem; line-height: 1.45; padding: .8rem; }
+    #notesText:focus { outline: none; }
+    .notes-foot { padding: .6rem; border-top: 1px solid var(--surface-2); }
+    .notes-foot button { width: 100%; border: 0; border-radius: 10px; padding: .6rem; background: var(--surface-2); color: var(--text); font-weight: 600; cursor: pointer; }
+    .notes-foot button:hover { filter: brightness(1.2); }
+
     @media (max-width: 600px) {
       #localWrap { width: 110px; bottom: 6rem; right: .7rem; }
       .name-tag { bottom: 6rem; left: .7rem; }
-      .ctrl { width: 52px; height: 52px; }
-      #chatPanel { left: .7rem; right: .7rem; width: auto; bottom: calc(6rem + 95px); }
+      .ctrl { width: 48px; height: 48px; }
+      .controls { gap: .6rem; }
+      .chip { font-size: .8rem; padding: .4rem .65rem; }
+      .side-panel { left: .7rem; right: .7rem; width: auto; bottom: calc(6rem + 95px); }
     }
   </style>
 </head>
@@ -132,6 +145,7 @@
         <span id="roomLabel">Room</span>
         <button id="btnCopy">Salin link</button>
       </div>
+      <div id="timerChip" class="chip timer" hidden><span id="timerText">00:00</span></div>
       <div class="chip"><span id="dot" class="dot"></span><span id="statusText">Menyambungkan</span></div>
     </div>
 
@@ -142,13 +156,20 @@
     </div>
 
     <!-- Panel chat -->
-    <div id="chatPanel" hidden>
-      <div class="chat-head">Chat</div>
+    <div id="chatPanel" class="side-panel" hidden>
+      <div class="panel-head">Chat</div>
       <div id="chatList"></div>
       <div class="chat-form">
         <input id="chatInput" placeholder="Tulis pesan..." maxlength="500" autocomplete="off">
         <button id="btnSend">Kirim</button>
       </div>
+    </div>
+
+    <!-- Panel catatan (hanya pewawancara) -->
+    <div id="notesPanel" class="side-panel" hidden>
+      <div class="panel-head">Catatan pewawancara<small>Pribadi: hanya ada di browsermu, tidak dikirim ke siapa pun</small></div>
+      <textarea id="notesText" placeholder="Tulis catatan wawancara di sini..."></textarea>
+      <div class="notes-foot"><button id="btnDownloadNotes">Unduh catatan (.txt)</button></div>
     </div>
 
     <div id="toast"></div>
@@ -160,6 +181,7 @@
         <button id="btnChat" class="ctrl" title="Chat"></button>
         <span id="chatBadge" class="badge" hidden>0</span>
       </div>
+      <button id="btnNotes" class="ctrl" title="Catatan pewawancara" hidden></button>
       <button id="btnLeave" class="ctrl hangup" title="Keluar"></button>
     </div>
   </section>
@@ -172,6 +194,7 @@
       cam: '<svg viewBox="0 0 24 24"><path d="m16 13 5.22 3.48a.5.5 0 0 0 .78-.42V7.87a.5.5 0 0 0-.75-.43L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>',
       camOff: '<svg viewBox="0 0 24 24"><path d="M10.66 6H14a2 2 0 0 1 2 2v2.5l5.25-3.5a.5.5 0 0 1 .75.43v8.14"/><path d="M16 16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2"/><line x1="2" x2="22" y1="2" y2="22"/></svg>',
       chat: '<svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+      notes: '<svg viewBox="0 0 24 24"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/></svg>',
       hangup: '<svg viewBox="0 0 24 24" style="transform: rotate(135deg)"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
     };
 
@@ -184,7 +207,17 @@
     let ws, pc, localStream;
     let currentRoom = "";
     let myName = "";
+    let myRole = "";
+    let remoteName = "";
     let unread = 0;
+
+    // Timer
+    let timerId = null;
+    let timerStart = 0;
+    let lastDuration = "";
+
+    // Catatan: true kalau ada isi yang belum diunduh
+    let notesDirty = false;
 
     // ---------- Fungsi tampilan ----------
     function showLobbyError(text) {
@@ -216,6 +249,7 @@
       $("btnCam").innerHTML = ICONS.cam;
       $("btnCam").classList.remove("off");
       $("btnChat").innerHTML = ICONS.chat;
+      $("btnNotes").innerHTML = ICONS.notes;
       $("btnLeave").innerHTML = ICONS.hangup;
       $("localWrap").classList.remove("cam-off");
     }
@@ -232,8 +266,77 @@
     }
 
     function setRemoteLabel(name, role) {
+      remoteName = name;
       $("remoteLabel").textContent = `${name} · ${ROLE_LABEL[role] || ""}`;
       $("remoteLabel").hidden = false;
+    }
+
+    // ---------- Timer ----------
+    function formatDuration(totalSec) {
+      const h = Math.floor(totalSec / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const s = totalSec % 60;
+      const mm = String(m).padStart(2, "0");
+      const ss = String(s).padStart(2, "0");
+      return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+    }
+
+    function tickTimer() {
+      $("timerText").textContent = formatDuration(Math.floor((Date.now() - timerStart) / 1000));
+    }
+
+    function startTimer() {
+      if (timerId) return; // sudah berjalan
+      timerStart = Date.now();
+      $("timerChip").hidden = false;
+      tickTimer();
+      timerId = setInterval(tickTimer, 1000);
+    }
+
+    function stopTimer() {
+      if (timerId) {
+        lastDuration = formatDuration(Math.floor((Date.now() - timerStart) / 1000));
+        clearInterval(timerId);
+        timerId = null;
+      }
+      $("timerChip").hidden = true;
+    }
+
+    function durationText() {
+      if (timerId) return formatDuration(Math.floor((Date.now() - timerStart) / 1000));
+      return lastDuration || "-";
+    }
+
+    // ---------- Panel samping (chat dan catatan) ----------
+    function togglePanel(which) {
+      const chat = $("chatPanel");
+      const notes = $("notesPanel");
+      const target = which === "chat" ? chat : notes;
+      const other = which === "chat" ? notes : chat;
+      const opening = target.hidden;
+
+      other.hidden = true;
+      target.hidden = !opening;
+      $("btnChat").classList.toggle("active", which === "chat" && opening);
+      $("btnNotes").classList.toggle("active", which === "notes" && opening);
+      if (which === "chat" && !opening) { /* ditutup */ }
+      if (!opening) return;
+
+      if (which === "chat") {
+        unread = 0;
+        updateBadge();
+        $("chatList").scrollTop = $("chatList").scrollHeight;
+        $("chatInput").focus();
+      } else {
+        $("notesText").focus();
+      }
+    }
+
+    function closePanels() {
+      $("chatPanel").hidden = true;
+      $("notesPanel").hidden = true;
+      $("btnChat").classList.remove("active");
+      $("btnNotes").classList.remove("active");
     }
 
     // ---------- Chat ----------
@@ -244,21 +347,9 @@
 
     function resetChat() {
       $("chatList").innerHTML = "";
-      $("chatPanel").hidden = true;
       $("chatInput").value = "";
       unread = 0;
       updateBadge();
-    }
-
-    function toggleChat() {
-      const panel = $("chatPanel");
-      panel.hidden = !panel.hidden;
-      if (!panel.hidden) {
-        unread = 0;
-        updateBadge();
-        $("chatList").scrollTop = $("chatList").scrollHeight;
-        $("chatInput").focus();
-      }
     }
 
     function addChat(name, text, mine) {
@@ -292,6 +383,41 @@
       $("chatInput").value = "";
     }
 
+    // ---------- Catatan ----------
+    function hasUnsavedNotes() {
+      return myRole === "interviewer" && notesDirty && $("notesText").value.trim() !== "";
+    }
+
+    // Simpan catatan sebagai file .txt. Mengembalikan true kalau ada yang diunduh.
+    function downloadNotes() {
+      const isi = $("notesText").value.trim();
+      if (!isi) { toast("Catatan masih kosong"); return false; }
+
+      const tanggal = new Date().toLocaleString("id-ID");
+      const teks =
+        `CATATAN WAWANCARA\n` +
+        `Room       : ${currentRoom || "-"}\n` +
+        `Tanggal    : ${tanggal}\n` +
+        `Pewawancara: ${myName}\n` +
+        `Kandidat   : ${remoteName || "-"}\n` +
+        `Durasi     : ${durationText()}\n` +
+        `\n----------------------------------------\n\n` +
+        isi + "\n";
+
+      const blob = new Blob([teks], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `catatan-wawancara-${currentRoom || "room"}-${new Date().toISOString().slice(0, 10)}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+      notesDirty = false;
+      return true;
+    }
+
     // ---------- Masuk dan keluar ----------
     async function start(firstMessage) {
       showLobbyError("");
@@ -312,8 +438,11 @@
 
       $("localVideo").srcObject = localStream;
       myName = firstMessage.name;
-      const myRole = firstMessage.type === "create" ? "interviewer" : "candidate";
+      myRole = firstMessage.type === "create" ? "interviewer" : "candidate";
+      remoteName = "";
+      lastDuration = "";
       $("localName").textContent = `${myName} · ${ROLE_LABEL[myRole]}`;
+      $("btnNotes").hidden = myRole !== "interviewer"; // catatan hanya untuk pewawancara
       currentRoom = firstMessage.room || "";
 
       const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -323,6 +452,9 @@
         ws.send(JSON.stringify(firstMessage));
         resetControls();
         resetChat();
+        closePanels();
+        $("notesText").value = "";
+        notesDirty = false;
         setStatus("wait", "Menyambungkan");
         showWaiting("Menunggu peserta lain...");
         $("roomLabel").textContent = currentRoom ? "Room " + currentRoom : "Room";
@@ -342,6 +474,11 @@
 
     // Kembali ke lobby dan bersihkan semuanya
     function cleanup(message) {
+      // Pengaman: catatan yang belum diunduh disimpan otomatis sebelum dibuang
+      if (hasUnsavedNotes() && downloadNotes()) {
+        message = (message ? message + " " : "") + "Catatan wawancara diunduh otomatis.";
+      }
+
       if (ws) {
         ws.onclose = null; // cegah cleanup berulang
         ws.onerror = null;
@@ -353,6 +490,10 @@
       $("localVideo").srcObject = null;
       $("remoteLabel").hidden = true;
       resetChat();
+      closePanels();
+      $("notesText").value = "";
+      notesDirty = false;
+      stopTimer();
       $("call").hidden = true;
       $("lobby").hidden = false;
       setLobbyBusy(false);
@@ -381,7 +522,7 @@
 
       pc.onconnectionstatechange = () => {
         const s = pc.connectionState;
-        if (s === "connected") setStatus("ok", "Terhubung");
+        if (s === "connected") { setStatus("ok", "Terhubung"); startTimer(); }
         else if (s === "failed" || s === "disconnected") setStatus("bad", "Terputus");
         else setStatus("wait", "Menyambungkan");
       };
@@ -390,6 +531,7 @@
     function closePeer() {
       if (pc) { pc.close(); pc = null; }
       $("remoteVideo").srcObject = null;
+      stopTimer();
     }
 
     async function handleMessage(msg) {
@@ -496,9 +638,13 @@
       $("localWrap").classList.toggle("cam-off", !track.enabled);
     };
 
-    $("btnChat").onclick = toggleChat;
+    $("btnChat").onclick = () => togglePanel("chat");
+    $("btnNotes").onclick = () => togglePanel("notes");
     $("btnSend").onclick = sendChat;
     $("chatInput").onkeydown = (e) => { if (e.key === "Enter") sendChat(); };
+
+    $("notesText").oninput = () => { notesDirty = true; };
+    $("btnDownloadNotes").onclick = () => { if (downloadNotes()) toast("Catatan diunduh"); };
 
     $("btnLeave").onclick = () => cleanup("");
 
@@ -511,6 +657,11 @@
         prompt("Salin link ini:", link);
       }
     };
+
+    // Peringatan kalau tab ditutup saat catatan belum diunduh
+    window.addEventListener("beforeunload", (e) => {
+      if (hasUnsavedNotes()) { e.preventDefault(); e.returnValue = ""; }
+    });
 
     // ---------- Saat halaman dibuka ----------
     // Kalau dibuka lewat link berisi #KODE, isi otomatis kolom kode
