@@ -1,4 +1,7 @@
+use std::time::Duration;
+
 use axum::{
+    body::Bytes,
     extract::{
         State,
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -7,6 +10,7 @@ use axum::{
 };
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc::unbounded_channel;
+use tokio::time::{Instant, interval_at};
 use tracing::{debug, info, warn};
 
 use crate::messages::{Role, Signal, send, send_error};
@@ -17,6 +21,11 @@ const MAX_MESSAGE_BYTES: usize = 16 * 1024;
 
 // Batas panjang satu pesan chat (dalam karakter)
 const MAX_CHAT_CHARS: usize = 500;
+
+// Heartbeat: server kirim ping tiap 20 detik.
+// Kalau 50 detik tidak ada kabar apa pun dari klien, koneksi dianggap mati.
+const PING_INTERVAL_SECS: u64 = 20;
+const IDLE_TIMEOUT_SECS: u64 = 50;
 
 // Rapikan nama: buang spasi pinggir, tolak kalau kosong atau lebih dari 30 karakter
 fn clean_name(raw: &str) -> Option<String> {
@@ -55,11 +64,37 @@ async fn handle_socket(socket: WebSocket, rooms: Rooms) {
     let my_id: u64 = rand::random();
     let mut my_room: Option<String> = None;
 
-    while let Some(Ok(msg)) = stream.next().await {
+    // Heartbeat: ticker pertama baru berbunyi setelah 20 detik (bukan langsung)
+    let period = Duration::from_secs(PING_INTERVAL_SECS);
+    let mut ticker = interval_at(Instant::now() + period, period);
+    let mut last_seen = Instant::now();
+
+    loop {
+        // select! menunggu dua hal sekaligus: pesan dari klien ATAU detak ticker
+        let msg = tokio::select! {
+            incoming = stream.next() => {
+                match incoming {
+                    Some(Ok(m)) => {
+                        last_seen = Instant::now(); // ada kabar dari klien (termasuk pong)
+                        m
+                    }
+                    _ => break, // klien putus atau error
+                }
+            }
+            _ = ticker.tick() => {
+                if last_seen.elapsed() > Duration::from_secs(IDLE_TIMEOUT_SECS) {
+                    warn!("klien tidak merespons, koneksi dianggap mati");
+                    break;
+                }
+                tx.send(Message::Ping(Bytes::new())).ok();
+                continue;
+            }
+        };
+
         let text = match msg {
             Message::Text(t) => t,
             Message::Close(_) => break,
-            _ => continue, // ping/binary diabaikan
+            _ => continue, // ping/pong/binary: cukup dicatat sebagai tanda hidup
         };
 
         // Pesan rusak tidak boleh bikin server crash: balas error, lanjut
@@ -210,7 +245,7 @@ async fn handle_socket(socket: WebSocket, rooms: Rooms) {
         }
     }
 
-    // Sampai sini klien putus (tutup tab, error, dll): bersihkan
+    // Sampai sini klien putus (tutup tab, error, timeout, dll): bersihkan
     leave_room(&rooms, &my_room, my_id);
     send_task.abort();
     info!("klien putus");
