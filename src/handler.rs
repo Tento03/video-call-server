@@ -7,12 +7,29 @@ use axum::{
 };
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc::unbounded_channel;
+use tracing::{debug, info, warn};
 
-use crate::messages::{send, send_error, Signal};
+use crate::messages::{send, send_error, Role, Signal};
 use crate::rooms::{leave_room, random_code, Peer, Room, Rooms};
 
+// Batas ukuran satu pesan. SDP biasanya beberapa KB, jadi 16 KB sudah longgar.
+const MAX_MESSAGE_BYTES: usize = 16 * 1024;
+
+// Rapikan nama: buang spasi pinggir, tolak kalau kosong atau lebih dari 30 karakter
+fn clean_name(raw: &str) -> Option<String> {
+    let name = raw.trim();
+    if name.is_empty() || name.chars().count() > 30 {
+        None
+    } else {
+        Some(name.to_string())
+    }
+}
+
 pub async fn ws_handler(ws: WebSocketUpgrade, State(rooms): State<Rooms>) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_socket(socket, rooms))
+    // Pesan yang lebih besar dari batas membuat koneksi itu diputus
+    ws.max_message_size(MAX_MESSAGE_BYTES)
+        .max_frame_size(MAX_MESSAGE_BYTES)
+        .on_upgrade(move |socket| handle_socket(socket, rooms))
 }
 
 // Dijalankan untuk setiap klien yang tersambung
@@ -46,17 +63,22 @@ async fn handle_socket(socket: WebSocket, rooms: Rooms) {
         let signal: Signal = match serde_json::from_str(text.as_str()) {
             Ok(s) => s,
             Err(_) => {
+                warn!("menerima pesan tidak valid dari klien");
                 send_error(&tx, "pesan tidak valid");
                 continue;
             }
         };
 
         match signal {
-            Signal::Create => {
+            Signal::Create { name } => {
                 if my_room.is_some() {
                     send_error(&tx, "kamu sudah ada di room");
                     continue;
                 }
+                let Some(name) = clean_name(&name) else {
+                    send_error(&tx, "nama harus 1-30 karakter");
+                    continue;
+                };
                 let mut map = rooms.lock().unwrap();
                 let code = loop {
                     let c = random_code();
@@ -67,30 +89,64 @@ async fn handle_socket(socket: WebSocket, rooms: Rooms) {
                 map.insert(
                     code.clone(),
                     Room {
-                        peers: vec![Peer { id: my_id, tx: tx.clone() }],
+                        peers: vec![Peer {
+                            id: my_id,
+                            name,
+                            role: Role::Interviewer, // pembuat room = pewawancara
+                            tx: tx.clone(),
+                        }],
                     },
                 );
                 drop(map); // lepas lock secepatnya
                 my_room = Some(code.clone());
+                info!(room = %code, "room dibuat");
                 send(&tx, &Signal::Created { room: code });
             }
 
-            Signal::Join { room } => {
+            Signal::Join { room, name } => {
                 if my_room.is_some() {
                     send_error(&tx, "kamu sudah ada di room");
                     continue;
                 }
+                let Some(name) = clean_name(&name) else {
+                    send_error(&tx, "nama harus 1-30 karakter");
+                    continue;
+                };
                 let code = room.to_uppercase();
+                if code.len() != 6 {
+                    send_error(&tx, "kode room tidak valid");
+                    continue;
+                }
                 let mut map = rooms.lock().unwrap();
                 match map.get_mut(&code) {
                     None => send_error(&tx, "room tidak ditemukan"),
                     Some(r) if r.peers.len() >= 2 => send_error(&tx, "room penuh"),
                     Some(r) => {
-                        // Beri tahu peserta yang sudah ada
+                        info!(room = %code, "peserta bergabung");
                         for p in &r.peers {
-                            send(&p.tx, &Signal::PeerJoined);
+                            // Beri tahu yang sudah ada: siapa yang baru masuk
+                            send(
+                                &p.tx,
+                                &Signal::PeerJoined {
+                                    name: name.clone(),
+                                    role: Role::Candidate,
+                                },
+                            );
+                            // Beri tahu yang baru masuk: siapa yang sudah ada
+                            send(
+                                &tx,
+                                &Signal::Joined {
+                                    name: p.name.clone(),
+                                    role: p.role,
+                                },
+                            );
                         }
-                        r.peers.push(Peer { id: my_id, tx: tx.clone() });
+                        r.peers.push(Peer {
+                            id: my_id,
+                            name,
+                            role: Role::Candidate, // yang bergabung = kandidat
+                            tx: tx.clone(),
+                        });
                         my_room = Some(code);
                     }
                 }
@@ -102,6 +158,7 @@ async fn handle_socket(socket: WebSocket, rooms: Rooms) {
                     send_error(&tx, "kamu belum masuk room");
                     continue;
                 };
+                debug!(room = %code, "meneruskan pesan signaling");
                 let map = rooms.lock().unwrap();
                 if let Some(r) = map.get(code) {
                     for p in &r.peers {
@@ -121,5 +178,5 @@ async fn handle_socket(socket: WebSocket, rooms: Rooms) {
     // Sampai sini klien putus (tutup tab, error, dll): bersihkan
     leave_room(&rooms, &my_room, my_id);
     send_task.abort();
-    println!("Klien putus");
+    info!("klien putus");
 }

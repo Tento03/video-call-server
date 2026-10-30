@@ -7,6 +7,15 @@ use tower_http::services::ServeDir;
 
 #[tokio::main]
 async fn main() {
+    // Nyalakan sistem log. Default: level info ke atas untuk crate kita.
+    // Bisa diubah lewat variabel RUST_LOG, mis. video_call_server=debug
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "video_call_server=info".into()),
+        )
+        .init();
+
     let rooms = rooms::new_rooms();
 
     let app = Router::new()
@@ -19,7 +28,7 @@ async fn main() {
         .await
         .unwrap();
 
-    println!("Server jalan di http://localhost:3000");
+    tracing::info!("Server jalan di http://localhost:3000");
     axum::serve(listener, app).await.unwrap();
 }
 

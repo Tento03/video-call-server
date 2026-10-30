@@ -20,6 +20,8 @@
     .card { width: 100%; max-width: 420px; background: var(--surface); border-radius: var(--radius); padding: 2rem; box-shadow: 0 10px 40px rgba(0,0,0,.4); }
     .card h1 { font-size: 1.6rem; margin-bottom: .4rem; }
     .sub { color: var(--muted); margin-bottom: 1.5rem; line-height: 1.5; }
+    .name-input { width: 100%; font-size: 1rem; padding: .8rem 1rem; margin-bottom: .8rem; border-radius: 12px; border: 2px solid var(--surface-2); background: var(--bg); color: var(--text); }
+    .name-input:focus { outline: none; border-color: var(--accent); }
     .btn { width: 100%; font-size: 1rem; font-weight: 600; padding: .85rem 1rem; border: 0; border-radius: 12px; cursor: pointer; color: #fff; background: var(--accent); transition: filter .15s, transform .05s; }
     .btn:hover { filter: brightness(1.1); }
     .btn:active { transform: scale(.98); }
@@ -42,6 +44,8 @@
     @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(79,140,255,.6); } 100% { box-shadow: 0 0 0 40px rgba(79,140,255,0); } }
     #waitingText { font-size: 1.1rem; }
     #waiting .hint { color: var(--muted); font-size: .9rem; }
+
+    .name-tag { position: absolute; left: 1rem; bottom: 6.5rem; background: rgba(26,29,36,.8); backdrop-filter: blur(8px); padding: .4rem .8rem; border-radius: 999px; font-size: .9rem; }
 
     .topbar { position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: center; gap: .6rem; padding: calc(.9rem + env(safe-area-inset-top)) 1rem .9rem; background: linear-gradient(rgba(0,0,0,.55), transparent); }
     .chip { display: inline-flex; align-items: center; gap: .5rem; background: rgba(26,29,36,.8); backdrop-filter: blur(8px); padding: .45rem .8rem; border-radius: 999px; font-size: .9rem; }
@@ -67,8 +71,11 @@
 
     @media (max-width: 600px) {
       #localWrap { width: 110px; bottom: 6rem; right: .7rem; }
+      .name-tag { bottom: 6rem; left: .7rem; }
       .ctrl { width: 52px; height: 52px; }
     }
+
+    .local-name { position: absolute; left: .4rem; bottom: .4rem; background: rgba(0,0,0,.6); padding: .15rem .55rem; border-radius: 999px; font-size: .75rem; }
   </style>
 </head>
 <body>
@@ -79,6 +86,7 @@
       <h1>Video Call</h1>
       <p class="sub">Ngobrol tatap muka langsung dari browser. Tanpa akun, tanpa instalasi.</p>
       <div id="invite" class="invite" hidden></div>
+      <input id="nameInput" class="name-input" placeholder="Nama kamu" maxlength="30" autocomplete="off">
       <button id="btnCreate" class="btn">Buat room baru</button>
       <div class="divider">atau gabung ke room</div>
       <div class="join-row">
@@ -99,6 +107,8 @@
       <p class="hint">Bagikan link room lewat tombol "Salin link" di kiri atas</p>
     </div>
 
+    <div id="remoteLabel" class="name-tag" hidden></div>
+
     <div class="topbar">
       <div class="chip">
         <span id="roomLabel">Room</span>
@@ -108,8 +118,9 @@
     </div>
 
     <div id="localWrap">
-      <video id="localVideo" autoplay muted playsinline></video>
-      <div id="camOffLabel">Kamera mati</div>
+    <video id="localVideo" autoplay muted playsinline></video>
+    <div id="camOffLabel">Kamera mati</div>
+    <div id="localName" class="local-name"></div>
     </div>
 
     <div id="toast"></div>
@@ -130,6 +141,8 @@
       camOff: '<svg viewBox="0 0 24 24"><path d="M10.66 6H14a2 2 0 0 1 2 2v2.5l5.25-3.5a.5.5 0 0 1 .75.43v8.14"/><path d="M16 16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2"/><line x1="2" x2="22" y1="2" y2="22"/></svg>',
       hangup: '<svg viewBox="0 0 24 24" style="transform: rotate(135deg)"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
     };
+
+    const ROLE_LABEL = { interviewer: "Pewawancara", candidate: "Kandidat" };
 
     const $ = (id) => document.getElementById(id);
     const rtcConfig = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
@@ -175,6 +188,17 @@
       $("btnJoin").disabled = busy;
     }
 
+    function getName() {
+      const name = $("nameInput").value.trim();
+      if (!name) { showLobbyError("Isi nama kamu dulu."); return null; }
+      return name;
+    }
+
+    function setRemoteLabel(name, role) {
+      $("remoteLabel").textContent = `${name} · ${ROLE_LABEL[role] || ""}`;
+      $("remoteLabel").hidden = false;
+    }
+
     // ---------- Masuk dan keluar ----------
     async function start(firstMessage) {
       showLobbyError("");
@@ -195,6 +219,8 @@
 
       $("localVideo").srcObject = localStream;
       currentRoom = firstMessage.room || "";
+      const myRole = firstMessage.type === "create" ? "interviewer" : "candidate";
+      $("localName").textContent = `${firstMessage.name} · ${ROLE_LABEL[myRole]}`;    
 
       const proto = location.protocol === "https:" ? "wss" : "ws";
       ws = new WebSocket(`${proto}://${location.host}/ws`);
@@ -230,6 +256,7 @@
       closePeer();
       if (localStream) { localStream.getTracks().forEach((t) => t.stop()); localStream = null; }
       $("localVideo").srcObject = null;
+      $("remoteLabel").hidden = true;
       $("call").hidden = true;
       $("lobby").hidden = false;
       setLobbyBusy(false);
@@ -277,9 +304,15 @@
           history.replaceState(null, "", "#" + msg.room); // address bar jadi link yang bisa dibagikan
           break;
 
+        case "joined":
+          // Kita yang baru masuk: tampilkan nama orang yang sudah ada di room
+          setRemoteLabel(msg.name, msg.role);
+          break;
+
         case "peer-joined": {
           // Kita yang sudah di room duluan: buat offer
-          toast("Peserta baru bergabung");
+          setRemoteLabel(msg.name, msg.role);
+          toast(`${msg.name} bergabung`);
           setStatus("wait", "Menyambungkan");
           createPeer();
           const offer = await pc.createOffer();
@@ -308,6 +341,7 @@
 
         case "peer-left":
           closePeer();
+          $("remoteLabel").hidden = true;
           setStatus("wait", "Menunggu peserta");
           showWaiting("Lawan bicara keluar. Menunggu peserta lain...");
           toast("Lawan bicara keluar");
@@ -317,6 +351,7 @@
           const pesan =
             msg.message === "room tidak ditemukan" ? "Room tidak ditemukan. Periksa kembali kodenya."
             : msg.message === "room penuh" ? "Room sudah penuh (maksimal 2 peserta)."
+            : msg.message === "nama harus 1-30 karakter" ? "Nama harus 1-30 karakter."
             : "Terjadi kesalahan: " + msg.message;
           cleanup(pesan);
           break;
@@ -325,13 +360,18 @@
     }
 
     // ---------- Tombol ----------
-    $("btnCreate").onclick = () => start({ type: "create" });
+    $("btnCreate").onclick = () => {
+      const name = getName();
+      if (name) start({ type: "create", name });
+    };
 
     function joinFromInput() {
+      const name = getName();
+      if (!name) return;
       const room = $("roomInput").value.trim().toUpperCase();
       if (room.length !== 6) { showLobbyError("Kode room terdiri dari 6 karakter."); return; }
       history.replaceState(null, "", "#" + room);
-      start({ type: "join", room });
+      start({ type: "join", room, name });
     }
     $("btnJoin").onclick = joinFromInput;
     $("roomInput").onkeydown = (e) => { if (e.key === "Enter") joinFromInput(); };
@@ -368,7 +408,7 @@
     const kodeDariLink = location.hash.slice(1).toUpperCase();
     if (kodeDariLink) {
       $("roomInput").value = kodeDariLink;
-      $("invite").textContent = `Kamu diundang ke room ${kodeDariLink}. Tekan "Gabung" untuk masuk.`;
+      $("invite").textContent = `Kamu diundang ke room ${kodeDariLink}. Isi namamu, lalu tekan "Gabung".`;
       $("invite").hidden = false;
     }
   </script>

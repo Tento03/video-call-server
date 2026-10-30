@@ -2,20 +2,28 @@ use axum::extract::ws::Message;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
 
+// Peran di dalam wawancara
+#[derive(Deserialize, Serialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum Role {
+    Interviewer,
+    Candidate,
+}
+
 // Pesan signaling (JSON). Field "type" menentukan variannya.
-// Contoh: {"type":"join","room":"AB12CD"}
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum Signal {
     // dari klien
-    Create,
-    Join { room: String },
+    Create { name: String },
+    Join { room: String, name: String },
     Offer { sdp: String },
     Answer { sdp: String },
     Ice { candidate: serde_json::Value },
     // dari server
     Created { room: String },
-    PeerJoined,
+    Joined { name: String, role: Role },     // untuk yang baru masuk: info lawan bicara
+    PeerJoined { name: String, role: Role }, // untuk yang sudah ada: info yang baru masuk
     PeerLeft,
     Error { message: String },
 }

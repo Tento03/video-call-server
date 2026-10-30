@@ -4,11 +4,14 @@ use std::{
 };
 
 use rand::RngExt;
+use tracing::info;
 
-use crate::messages::{send, Signal, Tx};
+use crate::messages::{send, Role, Signal, Tx};
 
 pub struct Peer {
     pub id: u64,
+    pub name: String,
+    pub role: Role,
     pub tx: Tx,
 }
 
@@ -41,6 +44,7 @@ pub fn leave_room(rooms: &Rooms, room: &Option<String>, my_id: u64) {
 
     let now_empty = if let Some(r) = map.get_mut(code) {
         r.peers.retain(|p| p.id != my_id);
+        info!(room = %code, tersisa = r.peers.len(), "peserta keluar");
         if r.peers.is_empty() {
             true
         } else {
@@ -55,5 +59,6 @@ pub fn leave_room(rooms: &Rooms, room: &Option<String>, my_id: u64) {
 
     if now_empty {
         map.remove(code);
+        info!(room = %code, "room dihapus karena kosong");
     }
 }
